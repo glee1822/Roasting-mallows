@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Campfire Clicker"
+description = "A cozy campfire idle game about timing marshmallow roasts, growing a campsite, and returning to find progress made while away. Includes local autosave and save-file import/export."
+version = "1.0.0"
+id = "artifacts/campfire-clicker"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24801
+
+[services.development]
+run = "pnpm --filter @workspace/campfire-clicker run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/campfire-clicker", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/campfire-clicker/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24801"
+BASE_PATH = "/"
