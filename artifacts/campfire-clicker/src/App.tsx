@@ -25,6 +25,8 @@ function timeSince(timestamp: number) {
 function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number; sticks: number; mpr: number; roastPhase: string; roasting: boolean }) {
   const visibleFriends = Math.min(friends, 8);
   const visibleSticks = Math.min(sticks, 5);
+  const baseMarshmallowsPerStick = Math.floor(mpr / Math.max(1, visibleSticks));
+  const extraMarshmallows = mpr % Math.max(1, visibleSticks);
   const fireScale = Math.min(20, 7 + Math.floor(friends / 10) * 0.5) / 7;
   return (
     <div className="scene" aria-label="A quiet campsite beneath a starry woodland sky">
@@ -34,7 +36,7 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
       </div>
       <div className="moon" />
       <div className="tree-line" aria-hidden="true">
-        {Array.from({ length: 11 }, (_, i) => <div className={`tree ${i % 3 === 0 ? 'far' : ''}`} key={i} style={{ height: `${66 + ((i * 17) % 31)}%` }} />)}
+        {Array.from({ length: 24 }, (_, i) => <div className={`tree ${i % 3 === 0 ? 'far' : ''}`} key={i} style={{ height: `${66 + ((i * 17) % 31)}%`, left: `${(i / 24) * 100}%` }} />)}
       </div>
       <div className="eyes" aria-hidden="true" />
       <div className="horizon" />
@@ -52,8 +54,9 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
       </div>
       <div className="player-sticks" aria-label={`${pretty(mpr)} marshmallows on ${pretty(sticks)} sticks`}>
         {Array.from({ length: visibleSticks }, (_, stickIndex) => {
-          const marshmallowsOnStick = Math.min(5, Math.max(0, mpr - stickIndex * 5));
-          const angle = -31 + (stickIndex - (visibleSticks - 1) / 2) * 5;
+          const marshmallowsOnStick = baseMarshmallowsPerStick + (stickIndex < extraMarshmallows ? 1 : 0);
+          const visibleMarshmallows = Math.min(12, marshmallowsOnStick);
+          const angle = -5 + (stickIndex - (visibleSticks - 1) / 2) * 4;
           return (
             <div
               className={`roast-stick ${roasting ? 'active' : ''}`}
@@ -63,20 +66,25 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
                 '--stick-angle': `${angle}deg`,
               } as CSSProperties}
             >
-              {Array.from({ length: marshmallowsOnStick }, (_, marshmallowIndex) => (
+              {Array.from({ length: visibleMarshmallows }, (_, marshmallowIndex) => (
                 <span
                   className={`marshmallow ${roasting && roastPhase === 'normal' ? 'toasting' : ''} ${roastPhase === 'golden' ? 'golden' : ''} ${roastPhase === 'burnt' ? 'burnt' : ''}`}
                   key={marshmallowIndex}
                   style={{
-                    left: `${-7 + (marshmallowIndex % 3 - 1) * 11}px`,
-                    top: `${-14 + Math.floor(marshmallowIndex / 3) * 13}px`,
+                    left: `${-15 + (marshmallowIndex % 4) * 10}px`,
+                    top: `${-14 - Math.floor(marshmallowIndex / 4) * 8}px`,
                   }}
                 />
               ))}
+              {marshmallowsOnStick > visibleMarshmallows && (
+                <span className="mallow-overflow">+{pretty(marshmallowsOnStick - visibleMarshmallows)}</span>
+              )}
             </div>
           );
         })}
         {sticks > visibleSticks && <span className="stick-overflow">+{pretty(sticks - visibleSticks)} sticks</span>}
+        <span className="player-sleeve" />
+        <span className="player-hand" />
       </div>
       <div className="scene-vignette" />
     </div>
@@ -198,7 +206,7 @@ function App() {
       <section className="hud load-in" aria-label="Camp stats">
         <div className="mallow-total"><span className="stat-label">YOUR MARSHMALLOWS</span><strong data-testid="text-marshmallow-count">{pretty(state.marshmallows)}</strong><span className="stat-rate">+{pretty(state.mps, 2)} <small>per second</small></span></div>
         <div className="hud-divider" />
-        <div className="hud-stat"><span className="stat-icon"><Flame size={14} /></span><span className="stat-label">ROAST POWER</span><strong>{pretty(state.mpr, 2)}<small> / {pretty(state.maxMpr, 2)}</small></strong></div>
+        <div className="hud-stat"><span className="stat-icon"><Flame size={14} /></span><span className="stat-label">MARSHMALLOWS / ROAST</span><strong>{pretty(state.mpr, 2)}</strong></div>
         <div className="hud-stat"><span className="stat-icon muted-icon"><Trees size={14} /></span><span className="stat-label">YOUR CAMPSITE</span><strong>{pretty(state.sticks)} <small>sticks</small><span className="stat-dot">·</span>{pretty(state.friends)} <small>friends</small></strong></div>
       </section>
 
@@ -223,20 +231,25 @@ function App() {
       </aside>
 
       <div className="roast-panel load-in">
-        <div className={`roast-feedback phase-${roast.phase}`} role="status" aria-live="polite" data-testid="status-roast-feedback">
+        <div className={`roast-feedback visually-hidden phase-${roast.phase}`} role="status" aria-live="polite" data-testid="status-roast-feedback">
           {roast.phase === 'golden' ? <Sparkles size={14} /> : roast.phase === 'normal' ? <Check size={14} /> : roast.phase === 'burnt' ? <Flame size={14} /> : roast.phase === 'early' ? <CircleHelp size={14} /> : <span className="feedback-dot" />}
           <span>{phaseCopy}</span>
           {roast.lastAward > 0 && !isRoasting && <b>+{pretty(roast.lastAward)}</b>}
         </div>
-        <div className="roast-meter" aria-label={`Roast progress ${Math.round(roast.progress * 100)} percent`}>
-          <div className="meter-zones"><span /><span /><span /></div>
-          <div className="progress-track"><div className={`progress-fill phase-${roast.phase}`} style={{ width: `${Math.min(100, Math.max(0, roast.progress * 100))}%` }} /></div>
-          <div className="meter-labels"><span>RAW</span><span>GOLDEN</span><span>TOASTY</span></div>
+        <div
+          className="roast-meter"
+          role="progressbar"
+          aria-label={`Roast progress ${Math.round(roast.progress * 100)} percent`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(roast.progress * 100)}
+        >
+          <div className="meter-zones"><span className="zone-raw" /><span className="zone-normal" /><span className="zone-golden" /></div>
+          <div className="progress-track"><div className={`progress-fill phase-${roast.phase}`} style={{ height: `${Math.min(100, Math.max(0, roast.progress * 100))}%` }} /></div>
         </div>
         <button className={`roast-button ${isRoasting ? 'roasting' : ''}`} type="button" onPointerDown={onRoastPointerDown} onPointerUp={onRoastPointerUp} onPointerCancel={onRoastPointerUp} onLostPointerCapture={onRoastPointerUp} onContextMenu={(event) => event.preventDefault()} aria-label="Hold to roast a marshmallow" data-testid="button-roast">
-          <Flame size={18} /><span>{isRoasting ? 'ROASTING…' : 'HOLD TO ROAST'}</span><kbd>SPACE</kbd>
+          <Flame size={18} /><span className="visually-hidden">{isRoasting ? 'Roasting' : 'Hold to roast; release to stop'}</span>
         </button>
-        <p className="roast-hint">Release when it reaches the sweet spot. A burnt one is only a marshmallow lost.</p>
       </div>
 
       {ioMessage && <div className={`io-message ${ioMessage.tone}`} role="status" data-testid="status-save-message">

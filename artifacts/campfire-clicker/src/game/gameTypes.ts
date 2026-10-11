@@ -9,7 +9,6 @@ export interface CampfireState {
   mps: number;
   nights: number;
   activeSeconds: number;
-  maxMpr: number;
   goldenFriends: boolean;
 }
 

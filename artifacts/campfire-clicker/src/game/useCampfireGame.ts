@@ -93,7 +93,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-1",
     name: "One roasting stick",
-    description: "Adds room for 5 more marshmallows per roast.",
+    description: "Keep another roasting stick by the fire.",
     baseCost: 50,
     amount: 1,
     category: "player",
@@ -101,7 +101,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-5",
     name: "Five roasting sticks",
-    description: "Adds room for 25 more marshmallows per roast.",
+    description: "Add five more sticks to your roasting bundle.",
     baseCost: 200,
     amount: 5,
     category: "player",
@@ -110,7 +110,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-10",
     name: "Ten roasting sticks",
-    description: "Adds room for 50 more marshmallows per roast.",
+    description: "Keep ten more sticks ready at the fire.",
     baseCost: 450,
     amount: 10,
     category: "player",
@@ -119,7 +119,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-50",
     name: "Fifty roasting sticks",
-    description: "Adds room for 250 more marshmallows per roast.",
+    description: "Stock up with fifty more roasting sticks.",
     baseCost: 2000,
     amount: 50,
     category: "player",
@@ -128,7 +128,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-100",
     name: "One hundred roasting sticks",
-    description: "Adds room for 500 more marshmallows per roast.",
+    description: "Keep one hundred more sticks on hand.",
     baseCost: 4500,
     amount: 100,
     category: "player",
@@ -278,8 +278,6 @@ function validatePersistedGame(value: unknown): value is PersistedGame {
     return false;
   }
 
-  if (game.mpr > game.sticks * 5) return false;
-
   return Object.entries(game.purchases).every(
     ([id, count]) =>
       UPGRADE_BY_ID.has(id) &&
@@ -364,7 +362,6 @@ function loadLocalGame(): {
 }
 
 function createUpgradeViews(game: PersistedGame): Upgrade[] {
-  const capacity = game.sticks * 5;
   return UPGRADE_DEFINITIONS.map((definition) => {
     const purchased = game.purchases[definition.id] ?? 0;
     const prerequisiteCount = definition.prerequisiteCount ?? 10;
@@ -375,9 +372,6 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
     const cost = Math.ceil(
       definition.baseCost * Math.pow(1.25, purchased),
     );
-    const enoughCapacity =
-      !definition.id.startsWith("mpr-") ||
-      game.mpr + definition.amount <= capacity;
     const oneTimeAvailable =
       !definition.oneTime || !game.goldenFriends;
 
@@ -392,7 +386,6 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
       affordable:
         unlocked &&
         oneTimeAvailable &&
-        enoughCapacity &&
         game.marshmallows >= cost,
       category: definition.category,
     };
@@ -661,12 +654,8 @@ export function useCampfireGame() {
         next.friendMpr += definition.amount;
       }
 
-      const normalized = {
-        ...next,
-        mpr: Math.min(next.mpr, next.sticks * 5),
-      };
-      updateGame(() => normalized);
-      writeSave(normalized);
+      updateGame(() => next);
+      writeSave(next);
     },
     [updateGame, writeSave],
   );
@@ -776,7 +765,6 @@ export function useCampfireGame() {
       mps: calculateMps(state),
       nights: Math.floor(state.activeSeconds / 600),
       activeSeconds: state.activeSeconds,
-      maxMpr: state.sticks * 5,
       goldenFriends: state.goldenFriends,
     }),
     [state],
