@@ -97,6 +97,7 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
 
 function UpgradeRow({ upgrade, onBuy, marshmallows, mpr, maxMpr }: { upgrade: Upgrade; onBuy: (id: string) => void; marshmallows: number; mpr: number; maxMpr: number }) {
   const needsMoreSticks = upgrade.id.startsWith('mpr-') && mpr + upgrade.amount > maxMpr;
+  const isGoldenLesson = upgrade.id === 'golden-friends';
   const canBuy = upgrade.unlocked && upgrade.affordable && !needsMoreSticks && marshmallows >= upgrade.cost;
   return (
     <article className={`upgrade-row ${!upgrade.unlocked ? 'upgrade-locked' : ''}`} data-testid={`upgrade-${upgrade.id}`}>
@@ -104,11 +105,11 @@ function UpgradeRow({ upgrade, onBuy, marshmallows, mpr, maxMpr }: { upgrade: Up
       <div className="upgrade-copy">
         <div className="upgrade-title">{upgrade.name}<span className="upgrade-owned">×{upgrade.purchased}</span></div>
         <p>{upgrade.description}</p>
-        <span className="upgrade-output">+{pretty(upgrade.amount, 2)} {upgrade.category === 'player' ? 'roast power' : 'marshmallows / sec'}</span>
+        {!isGoldenLesson && <span className="upgrade-output">+{pretty(upgrade.amount, 2)} {upgrade.category === 'player' ? 'roast power' : 'marshmallows / sec'}</span>}
       </div>
       <button className="buy-button" type="button" disabled={!canBuy} onClick={() => onBuy(upgrade.id)} data-testid={`button-buy-${upgrade.id}`}>
-        <span>{upgrade.unlocked ? needsMoreSticks ? 'Need sticks' : pretty(upgrade.cost) : 'Locked'}</span>
-        {upgrade.unlocked && !needsMoreSticks && <span className="buy-currency">mallow</span>}
+        <span>{upgrade.unlocked ? isGoldenLesson ? 'Learn' : needsMoreSticks ? 'Need sticks' : pretty(upgrade.cost) : 'Locked'}</span>
+        {upgrade.unlocked && !needsMoreSticks && !isGoldenLesson && <span className="buy-currency">mallow</span>}
       </button>
     </article>
   );

@@ -7,8 +7,8 @@ import type {
 } from "./gameTypes";
 
 const SAVE_KEY = "campfire-clicker-save-v1";
-const SAVE_VERSION = 2;
-const LEGACY_SAVE_VERSION = 1;
+const SAVE_VERSION = 3;
+const PREVIOUS_SAVE_VERSIONS = new Set([1, 2]);
 const TICK_MS = 1000;
 const SAVE_INTERVAL_MS = 2500;
 const ROAST_MIN_SECONDS = 1;
@@ -171,15 +171,6 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     prerequisiteId: "friends-10",
   },
   {
-    id: "friends-100",
-    name: "Invite one hundred friends",
-    description: "Turn the campsite into a festival.",
-    baseCost: 4500,
-    amount: 100,
-    category: "friends",
-    prerequisiteId: "friends-50",
-  },
-  {
     id: "friend-mpr-1",
     name: "+1 marshmallow per friend each second",
     description: "Every friend roasts one more marshmallow per second.",
@@ -206,35 +197,23 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     prerequisiteId: "friend-mpr-10",
   },
   {
-    id: "friend-mpr-100",
-    name: "+100 marshmallows per friend each second",
-    description: "Every friend roasts one hundred more marshmallows per second.",
-    baseCost: 1200,
-    amount: 100,
-    category: "friends",
-    prerequisiteId: "friend-mpr-50",
-  },
-  {
-    id: "friend-mpr-500",
-    name: "+500 marshmallows per friend each second",
-    description: "Every friend roasts five hundred more marshmallows per second.",
-    baseCost: 6000,
-    amount: 500,
-    category: "friends",
-    prerequisiteId: "friend-mpr-100",
-  },
-  {
     id: "golden-friends",
     name: "Golden-roast lessons",
     description: "Friends learn to make golden marshmallows. Doubles all friend production.",
-    baseCost: 1_000_000,
+    baseCost: 0,
     amount: 1,
     category: "friends",
-    prerequisiteId: "friends-100",
+    prerequisiteId: "friends-50",
     prerequisiteCount: 1,
     oneTime: true,
   },
 ];
+
+const RETIRED_UPGRADE_IDS = new Set([
+  "friends-100",
+  "friend-mpr-100",
+  "friend-mpr-500",
+]);
 
 const UPGRADE_BY_ID = new Map(
   UPGRADE_DEFINITIONS.map((upgrade) => [upgrade.id, upgrade]),
@@ -286,7 +265,7 @@ function validatePersistedGame(
     (allowLegacyOverCapacity || game.mpr <= game.sticks * 5) &&
     Object.entries(game.purchases).every(
     ([id, count]) =>
-      UPGRADE_BY_ID.has(id) &&
+      (UPGRADE_BY_ID.has(id) || RETIRED_UPGRADE_IDS.has(id)) &&
       Number.isSafeInteger(count) &&
       typeof count === "number" &&
       count >= 0,
@@ -294,12 +273,19 @@ function validatePersistedGame(
   );
 }
 
-function migrateLegacyGame(game: PersistedGame): PersistedGame {
+function migrateSavedGame(game: PersistedGame, wasUnlimitedSave: boolean): PersistedGame {
+  const purchases = Object.fromEntries(
+    Object.entries(game.purchases).filter(
+      ([id]) => !RETIRED_UPGRADE_IDS.has(id),
+    ),
+  );
   return {
     ...game,
     // Preserve roast power from saves made before sticks limited capacity.
-    sticks: Math.max(game.sticks, Math.ceil(game.mpr / 5)),
-    purchases: { ...game.purchases },
+    sticks: wasUnlimitedSave
+      ? Math.max(game.sticks, Math.ceil(game.mpr / 5))
+      : game.sticks,
+    purchases,
   };
 }
 
@@ -344,17 +330,20 @@ function loadLocalGame(): {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") throw new Error("Invalid save");
     const save = parsed as Partial<SaveFile>;
-    const isLegacySave = save.version === LEGACY_SAVE_VERSION;
+    const isLegacySave =
+      typeof save.version === "number" &&
+      PREVIOUS_SAVE_VERSIONS.has(save.version);
+    const wasUnlimitedSave = save.version === 1;
     if (
       (save.version !== SAVE_VERSION && !isLegacySave) ||
       !isFiniteNonNegative(save.savedAt) ||
-      !validatePersistedGame(save.game, isLegacySave)
+      !validatePersistedGame(save.game, wasUnlimitedSave)
     ) {
       throw new Error("Invalid save");
     }
 
     const persistedGame = isLegacySave
-      ? migrateLegacyGame(save.game)
+      ? migrateSavedGame(save.game, wasUnlimitedSave)
       : save.game;
     const secondsAway = Math.max(0, (now - save.savedAt) / 1000);
     const earnings = rounded(calculateMps(persistedGame) * secondsAway);
@@ -730,11 +719,14 @@ export function useCampfireGame() {
       }
 
       const save = parsed as Partial<SaveFile>;
-      const isLegacySave = save.version === LEGACY_SAVE_VERSION;
+      const isLegacySave =
+        typeof save.version === "number" &&
+        PREVIOUS_SAVE_VERSIONS.has(save.version);
+      const wasUnlimitedSave = save.version === 1;
       if (
         (save.version !== SAVE_VERSION && !isLegacySave) ||
         !isFiniteNonNegative(save.savedAt) ||
-        !validatePersistedGame(save.game, isLegacySave)
+        !validatePersistedGame(save.game, wasUnlimitedSave)
       ) {
         throw new Error(
           "That save file is invalid or was made with an unsupported version.",
@@ -743,7 +735,7 @@ export function useCampfireGame() {
 
       const now = Date.now();
       const persistedGame = isLegacySave
-        ? migrateLegacyGame(save.game)
+        ? migrateSavedGame(save.game, wasUnlimitedSave)
         : save.game;
       const secondsAway = Math.max(0, (now - save.savedAt) / 1000);
       const earnings = rounded(calculateMps(persistedGame) * secondsAway);
