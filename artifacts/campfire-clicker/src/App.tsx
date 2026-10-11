@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent } from 'react';
-import { Flame, Sparkles, ChevronDown, Moon, Music2, VolumeX, Download, Upload, Users, Tent, Trees, Timer, ShoppingBag, Check, CircleHelp } from 'lucide-react';
+import { Flame, Sparkles, ChevronDown, Moon, Music2, VolumeX, Download, Upload, Users, Tent, Trees, Timer, ShoppingBag } from 'lucide-react';
 import { useCampfireGame } from '@/game/useCampfireGame';
 import type { Upgrade } from '@/game/gameTypes';
 import './index.css';
@@ -56,7 +56,7 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
         {Array.from({ length: visibleSticks }, (_, stickIndex) => {
           const marshmallowsOnStick = baseMarshmallowsPerStick + (stickIndex < extraMarshmallows ? 1 : 0);
           const visibleMarshmallows = Math.min(12, marshmallowsOnStick);
-          const angle = -5 + (stickIndex - (visibleSticks - 1) / 2) * 4;
+          const angle = visibleSticks === 1 ? 0 : -2 + (stickIndex - (visibleSticks - 1) / 2) * 2;
           return (
             <div
               className={`roast-stick ${roasting ? 'active' : ''}`}
@@ -66,16 +66,21 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
                 '--stick-angle': `${angle}deg`,
               } as CSSProperties}
             >
-              {Array.from({ length: visibleMarshmallows }, (_, marshmallowIndex) => (
-                <span
-                  className={`marshmallow ${roasting && roastPhase === 'normal' ? 'toasting' : ''} ${roastPhase === 'golden' ? 'golden' : ''} ${roastPhase === 'burnt' ? 'burnt' : ''}`}
-                  key={marshmallowIndex}
-                  style={{
-                    left: `${-15 + (marshmallowIndex % 4) * 10}px`,
-                    top: `${-14 - Math.floor(marshmallowIndex / 4) * 8}px`,
-                  }}
-                />
-              ))}
+              {Array.from({ length: visibleMarshmallows }, (_, marshmallowIndex) => {
+                const row = Math.floor(marshmallowIndex / 4);
+                const rowCount = Math.min(4, visibleMarshmallows - row * 4);
+                const column = marshmallowIndex % 4;
+                return (
+                  <span
+                    className={`marshmallow ${roasting && roastPhase === 'normal' ? 'toasting' : ''} ${roastPhase === 'golden' ? 'golden' : ''} ${roastPhase === 'burnt' ? 'burnt' : ''}`}
+                    key={marshmallowIndex}
+                    style={{
+                      left: `${-4 + (column - (rowCount - 1) / 2) * 10}px`,
+                      top: `${-14 - row * 8}px`,
+                    }}
+                  />
+                );
+              })}
               {marshmallowsOnStick > visibleMarshmallows && (
                 <span className="mallow-overflow">+{pretty(marshmallowsOnStick - visibleMarshmallows)}</span>
               )}
@@ -176,14 +181,11 @@ function App() {
     }
   };
   const visibleUpgrades = upgrades.filter((upgrade: Upgrade) => upgrade.category === shopTab);
-  const phaseCopy = roast.phase === 'roasting'
-    ? roast.progress < 1 ? 'Easy does it…' : 'Watch the glow'
-    : roast.phase === 'early' ? 'A little underdone — try holding a touch longer'
-      : roast.phase === 'normal' ? 'Nicely toasted — full roast power'
-        : roast.phase === 'golden' ? 'A rare golden roast!'
-          : roast.phase === 'burnt' ? 'A little too toasty — no worries, try again'
-            : 'Hold to roast · release when it looks right';
   const isRoasting = roast.phase === 'roasting';
+  const roastOutcome = roast.phase === 'early' ? 'Uncooked roast'
+    : roast.phase === 'normal' ? 'Normal roast'
+      : roast.phase === 'golden' ? 'Golden roast'
+        : roast.phase === 'burnt' ? 'Burnt roast' : null;
 
   return (
     <main className="camp-app">
@@ -231,25 +233,28 @@ function App() {
       </aside>
 
       <div className="roast-panel load-in">
-        <div className={`roast-feedback visually-hidden phase-${roast.phase}`} role="status" aria-live="polite" data-testid="status-roast-feedback">
-          {roast.phase === 'golden' ? <Sparkles size={14} /> : roast.phase === 'normal' ? <Check size={14} /> : roast.phase === 'burnt' ? <Flame size={14} /> : roast.phase === 'early' ? <CircleHelp size={14} /> : <span className="feedback-dot" />}
-          <span>{phaseCopy}</span>
-          {roast.lastAward > 0 && !isRoasting && <b>+{pretty(roast.lastAward)}</b>}
+        <div className="roast-control">
+          <div
+            className="roast-meter"
+            role="progressbar"
+            aria-label={`Roast progress ${Math.round(roast.progress * 100)} percent`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(roast.progress * 100)}
+          >
+            <div className="meter-zones"><span className="zone-raw" /><span className="zone-normal" /><span className="zone-golden" /></div>
+            <div className="progress-track"><div className={`progress-fill phase-${roast.phase}`} style={{ height: `${Math.min(100, Math.max(0, roast.progress * 100))}%` }} /></div>
+          </div>
+          <button className={`roast-button ${isRoasting ? 'roasting' : ''}`} type="button" onPointerDown={onRoastPointerDown} onPointerUp={onRoastPointerUp} onPointerCancel={onRoastPointerUp} onLostPointerCapture={onRoastPointerUp} onContextMenu={(event) => event.preventDefault()} aria-label="Hold to roast a marshmallow" data-testid="button-roast">
+            <Flame size={18} /><span className="visually-hidden">{isRoasting ? 'Roasting' : 'Hold to roast; release to stop'}</span>
+          </button>
         </div>
-        <div
-          className="roast-meter"
-          role="progressbar"
-          aria-label={`Roast progress ${Math.round(roast.progress * 100)} percent`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(roast.progress * 100)}
-        >
-          <div className="meter-zones"><span className="zone-raw" /><span className="zone-normal" /><span className="zone-golden" /></div>
-          <div className="progress-track"><div className={`progress-fill phase-${roast.phase}`} style={{ height: `${Math.min(100, Math.max(0, roast.progress * 100))}%` }} /></div>
-        </div>
-        <button className={`roast-button ${isRoasting ? 'roasting' : ''}`} type="button" onPointerDown={onRoastPointerDown} onPointerUp={onRoastPointerUp} onPointerCancel={onRoastPointerUp} onLostPointerCapture={onRoastPointerUp} onContextMenu={(event) => event.preventDefault()} aria-label="Hold to roast a marshmallow" data-testid="button-roast">
-          <Flame size={18} /><span className="visually-hidden">{isRoasting ? 'Roasting' : 'Hold to roast; release to stop'}</span>
-        </button>
+        {roastOutcome && (
+          <div className={`roast-feedback phase-${roast.phase}`} role="status" aria-live="polite" data-testid="status-roast-feedback">
+            <span>{roastOutcome}</span>
+            {roast.lastAward > 0 && <b>+{pretty(roast.lastAward)}</b>}
+          </div>
+        )}
       </div>
 
       {ioMessage && <div className={`io-message ${ioMessage.tone}`} role="status" data-testid="status-save-message">
