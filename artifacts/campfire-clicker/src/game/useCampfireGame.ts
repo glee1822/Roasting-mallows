@@ -231,7 +231,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     amount: 1,
     category: "friends",
     prerequisiteId: "friends-100",
-    prerequisiteCount: 25,
+    prerequisiteCount: 1,
     oneTime: true,
   },
 ];

@@ -24,6 +24,8 @@ function timeSince(timestamp: number) {
 
 function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number; sticks: number; mpr: number; roastPhase: string; roasting: boolean }) {
   const visibleFriends = Math.min(friends, 8);
+  const leftFriends = Math.ceil(visibleFriends / 2);
+  const rightFriends = visibleFriends - leftFriends;
   const visibleSticks = Math.min(sticks, 5);
   const fireScale = Math.min(20, 7 + Math.floor(friends / 10) * 0.5) / 7;
   return (
@@ -42,7 +44,12 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
       <div className="tent-light" />
       <div className="tent" />
       {friends > 0 && <div className="friend-camp" aria-label={`${friends} campfire friends`}>
-        {Array.from({ length: visibleFriends }, (_, i) => <span className="friend-person" key={i} />)}
+        <div className="friend-side friend-side-left">
+          {Array.from({ length: leftFriends }, (_, i) => <span className="friend-person" key={`left-${i}`} />)}
+        </div>
+        <div className="friend-side friend-side-right">
+          {Array.from({ length: rightFriends }, (_, i) => <span className="friend-person" key={`right-${i}`} />)}
+        </div>
         {friends > visibleFriends && <span className="friend-overflow">+{pretty(friends - visibleFriends)}</span>}
       </div>}
       <div className="campfire" style={{ transform: `translateX(-50%) scale(${fireScale})` }} aria-hidden="true">
