@@ -162,7 +162,8 @@
 .upgrade-owned { margin-left:6px;color:#9b9f8e;font:10px var(--app-font-mono); }
 .upgrade-copy p { margin:3px 0 4px;color:#9ba194;font-size:10px;line-height:1.35; }
 .upgrade-output { color:#c5a979;font:9px var(--app-font-mono); }
-.buy-button { flex:none;min-width:67px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 6px;border:1px solid rgba(219,161,95,.22);border-radius:9px;background:rgba(199,136,68,.12);color:#e7bd80;font:500 11px var(--app-font-mono);cursor:pointer; }
+.buy-button { flex:none;min-width:78px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 6px;border:1px solid rgba(219,161,95,.22);border-radius:9px;background:rgba(199,136,68,.12);color:#e7bd80;font:500 11px var(--app-font-mono);cursor:pointer; }
+.buy-button span { white-space:nowrap; }
 .buy-button:not(:disabled):hover { background:rgba(199,136,68,.25);border-color:rgba(219,161,95,.42); }
 .buy-button:disabled { color:#69736b;border-color:rgba(171,182,166,.1);background:rgba(150,160,142,.06);cursor:not-allowed; }
 .buy-currency { font-size:8px;color:#a8a18b; }
@@ -319,7 +320,7 @@
 }
 .roast-stick::before { content:'';position:absolute;inset:0;background:linear-gradient(90deg,#38291f 0%,#ad8052 42%,#67462f 100%);clip-path:polygon(37% 100%,45% 0,55% 0,63% 100%); }
 .roast-stick.active { transform:translateX(-50%) rotate(calc(var(--stick-angle,-5deg) + 3deg)) rotateX(4deg); }
-.marshmallow { position:absolute;top:-14px;left:-7px;width:15px;height:19px;border-radius:7px;background:#f0dfc4;box-shadow:inset -4px -2px rgba(187,155,118,.25),0 0 7px rgba(255,190,104,.26); }
+.marshmallow { position:absolute;top:-14px;left:-4px;width:15px;height:19px;border-radius:7px;background:#f0dfc4;box-shadow:inset -4px -2px rgba(187,155,118,.25),0 0 7px rgba(255,190,104,.26); }
 .mallow-overflow { position:absolute;top:-42px;left:50%;transform:translateX(-50%);padding:2px 5px;border:1px solid rgba(245,208,147,.35);border-radius:99px;background:rgba(32,30,25,.8);color:#f4d6a0;font:8px var(--app-font-mono);white-space:nowrap; }
 .marshmallow.toasting { background:linear-gradient(140deg,#f0dfc4,#d79b51); }
 .marshmallow.golden { background:linear-gradient(140deg,#fff0b4,#eaa548); }

@@ -3,6 +3,7 @@ export type RoastPhase = 'idle' | 'roasting' | 'early' | 'normal' | 'golden' | '
 export interface CampfireState {
   marshmallows: number;
   mpr: number;
+  maxMpr: number;
   sticks: number;
   friends: number;
   friendMpr: number;

@@ -7,7 +7,8 @@ import type {
 } from "./gameTypes";
 
 const SAVE_KEY = "campfire-clicker-save-v1";
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
+const LEGACY_SAVE_VERSION = 1;
 const TICK_MS = 1000;
 const SAVE_INTERVAL_MS = 2500;
 const ROAST_MIN_SECONDS = 1;
@@ -93,7 +94,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-1",
     name: "One roasting stick",
-    description: "Keep another roasting stick by the fire.",
+    description: "Adds room for five more marshmallows per roast.",
     baseCost: 50,
     amount: 1,
     category: "player",
@@ -101,7 +102,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-5",
     name: "Five roasting sticks",
-    description: "Add five more sticks to your roasting bundle.",
+    description: "Adds room for 25 more marshmallows per roast.",
     baseCost: 200,
     amount: 5,
     category: "player",
@@ -110,7 +111,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-10",
     name: "Ten roasting sticks",
-    description: "Keep ten more sticks ready at the fire.",
+    description: "Adds room for 50 more marshmallows per roast.",
     baseCost: 450,
     amount: 10,
     category: "player",
@@ -119,7 +120,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-50",
     name: "Fifty roasting sticks",
-    description: "Stock up with fifty more roasting sticks.",
+    description: "Adds room for 250 more marshmallows per roast.",
     baseCost: 2000,
     amount: 50,
     category: "player",
@@ -128,7 +129,7 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "sticks-100",
     name: "One hundred roasting sticks",
-    description: "Keep one hundred more sticks on hand.",
+    description: "Adds room for 500 more marshmallows per roast.",
     baseCost: 4500,
     amount: 100,
     category: "player",
@@ -256,7 +257,10 @@ function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function validatePersistedGame(value: unknown): value is PersistedGame {
+function validatePersistedGame(
+  value: unknown,
+  allowLegacyOverCapacity = false,
+): value is PersistedGame {
   if (!value || typeof value !== "object") return false;
   const game = value as Partial<PersistedGame>;
   if (
@@ -278,13 +282,25 @@ function validatePersistedGame(value: unknown): value is PersistedGame {
     return false;
   }
 
-  return Object.entries(game.purchases).every(
+  return (
+    (allowLegacyOverCapacity || game.mpr <= game.sticks * 5) &&
+    Object.entries(game.purchases).every(
     ([id, count]) =>
       UPGRADE_BY_ID.has(id) &&
       Number.isSafeInteger(count) &&
       typeof count === "number" &&
       count >= 0,
+    )
   );
+}
+
+function migrateLegacyGame(game: PersistedGame): PersistedGame {
+  return {
+    ...game,
+    // Preserve roast power from saves made before sticks limited capacity.
+    sticks: Math.max(game.sticks, Math.ceil(game.mpr / 5)),
+    purchases: { ...game.purchases },
+  };
 }
 
 function calculateMps(game: PersistedGame): number {
@@ -328,21 +344,25 @@ function loadLocalGame(): {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") throw new Error("Invalid save");
     const save = parsed as Partial<SaveFile>;
+    const isLegacySave = save.version === LEGACY_SAVE_VERSION;
     if (
-      save.version !== SAVE_VERSION ||
+      (save.version !== SAVE_VERSION && !isLegacySave) ||
       !isFiniteNonNegative(save.savedAt) ||
-      !validatePersistedGame(save.game)
+      !validatePersistedGame(save.game, isLegacySave)
     ) {
       throw new Error("Invalid save");
     }
 
+    const persistedGame = isLegacySave
+      ? migrateLegacyGame(save.game)
+      : save.game;
     const secondsAway = Math.max(0, (now - save.savedAt) / 1000);
-    const earnings = rounded(calculateMps(save.game) * secondsAway);
+    const earnings = rounded(calculateMps(persistedGame) * secondsAway);
     const game = {
-      ...save.game,
-      marshmallows: rounded(save.game.marshmallows + earnings),
-      activeSeconds: rounded(save.game.activeSeconds + secondsAway),
-      purchases: { ...save.game.purchases },
+      ...persistedGame,
+      marshmallows: rounded(persistedGame.marshmallows + earnings),
+      activeSeconds: rounded(persistedGame.activeSeconds + secondsAway),
+      purchases: { ...persistedGame.purchases },
     };
 
     return {
@@ -374,6 +394,9 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
     );
     const oneTimeAvailable =
       !definition.oneTime || !game.goldenFriends;
+    const hasRoastCapacity =
+      !definition.id.startsWith("mpr-") ||
+      game.mpr + definition.amount <= game.sticks * 5;
 
     return {
       id: definition.id,
@@ -386,6 +409,7 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
       affordable:
         unlocked &&
         oneTimeAvailable &&
+        hasRoastCapacity &&
         game.marshmallows >= cost,
       category: definition.category,
     };
@@ -706,10 +730,11 @@ export function useCampfireGame() {
       }
 
       const save = parsed as Partial<SaveFile>;
+      const isLegacySave = save.version === LEGACY_SAVE_VERSION;
       if (
-        save.version !== SAVE_VERSION ||
+        (save.version !== SAVE_VERSION && !isLegacySave) ||
         !isFiniteNonNegative(save.savedAt) ||
-        !validatePersistedGame(save.game)
+        !validatePersistedGame(save.game, isLegacySave)
       ) {
         throw new Error(
           "That save file is invalid or was made with an unsupported version.",
@@ -717,13 +742,16 @@ export function useCampfireGame() {
       }
 
       const now = Date.now();
+      const persistedGame = isLegacySave
+        ? migrateLegacyGame(save.game)
+        : save.game;
       const secondsAway = Math.max(0, (now - save.savedAt) / 1000);
-      const earnings = rounded(calculateMps(save.game) * secondsAway);
+      const earnings = rounded(calculateMps(persistedGame) * secondsAway);
       const imported = {
-        ...save.game,
-        marshmallows: rounded(save.game.marshmallows + earnings),
-        activeSeconds: rounded(save.game.activeSeconds + secondsAway),
-        purchases: { ...save.game.purchases },
+        ...persistedGame,
+        marshmallows: rounded(persistedGame.marshmallows + earnings),
+        activeSeconds: rounded(persistedGame.activeSeconds + secondsAway),
+        purchases: { ...persistedGame.purchases },
       };
 
       stateRef.current = imported;
@@ -759,6 +787,7 @@ export function useCampfireGame() {
     () => ({
       marshmallows: state.marshmallows,
       mpr: state.mpr,
+      maxMpr: state.sticks * 5,
       sticks: state.sticks,
       friends: state.friends,
       friendMpr: state.friendMpr,

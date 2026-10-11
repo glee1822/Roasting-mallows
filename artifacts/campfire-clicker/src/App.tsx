@@ -25,8 +25,6 @@ function timeSince(timestamp: number) {
 function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number; sticks: number; mpr: number; roastPhase: string; roasting: boolean }) {
   const visibleFriends = Math.min(friends, 8);
   const visibleSticks = Math.min(sticks, 5);
-  const baseMarshmallowsPerStick = Math.floor(mpr / Math.max(1, visibleSticks));
-  const extraMarshmallows = mpr % Math.max(1, visibleSticks);
   const fireScale = Math.min(20, 7 + Math.floor(friends / 10) * 0.5) / 7;
   return (
     <div className="scene" aria-label="A quiet campsite beneath a starry woodland sky">
@@ -54,8 +52,8 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
       </div>
       <div className="player-sticks" aria-label={`${pretty(mpr)} marshmallows on ${pretty(sticks)} sticks`}>
         {Array.from({ length: visibleSticks }, (_, stickIndex) => {
-          const marshmallowsOnStick = baseMarshmallowsPerStick + (stickIndex < extraMarshmallows ? 1 : 0);
-          const visibleMarshmallows = Math.min(12, marshmallowsOnStick);
+          const marshmallowsOnStick = Math.min(5, Math.max(0, mpr - stickIndex * 5));
+          const visibleMarshmallows = marshmallowsOnStick;
           const angle = visibleSticks === 1 ? 0 : -2 + (stickIndex - (visibleSticks - 1) / 2) * 2;
           return (
             <div
@@ -67,23 +65,17 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
               } as CSSProperties}
             >
               {Array.from({ length: visibleMarshmallows }, (_, marshmallowIndex) => {
-                const row = Math.floor(marshmallowIndex / 4);
-                const rowCount = Math.min(4, visibleMarshmallows - row * 4);
-                const column = marshmallowIndex % 4;
                 return (
                   <span
                     className={`marshmallow ${roasting && roastPhase === 'normal' ? 'toasting' : ''} ${roastPhase === 'golden' ? 'golden' : ''} ${roastPhase === 'burnt' ? 'burnt' : ''}`}
                     key={marshmallowIndex}
                     style={{
-                      left: `${-4 + (column - (rowCount - 1) / 2) * 10}px`,
-                      top: `${-14 - row * 8}px`,
+                      left: '-4px',
+                      top: `${-14 + marshmallowIndex * 21}px`,
                     }}
                   />
                 );
               })}
-              {marshmallowsOnStick > visibleMarshmallows && (
-                <span className="mallow-overflow">+{pretty(marshmallowsOnStick - visibleMarshmallows)}</span>
-              )}
             </div>
           );
         })}
@@ -96,8 +88,9 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
   );
 }
 
-function UpgradeRow({ upgrade, onBuy, marshmallows }: { upgrade: Upgrade; onBuy: (id: string) => void; marshmallows: number }) {
-  const canBuy = upgrade.unlocked && upgrade.affordable && marshmallows >= upgrade.cost;
+function UpgradeRow({ upgrade, onBuy, marshmallows, mpr, maxMpr }: { upgrade: Upgrade; onBuy: (id: string) => void; marshmallows: number; mpr: number; maxMpr: number }) {
+  const needsMoreSticks = upgrade.id.startsWith('mpr-') && mpr + upgrade.amount > maxMpr;
+  const canBuy = upgrade.unlocked && upgrade.affordable && !needsMoreSticks && marshmallows >= upgrade.cost;
   return (
     <article className={`upgrade-row ${!upgrade.unlocked ? 'upgrade-locked' : ''}`} data-testid={`upgrade-${upgrade.id}`}>
       <div className="upgrade-glyph">{upgrade.category === 'player' ? <Flame size={17} /> : <Users size={17} />}</div>
@@ -107,8 +100,8 @@ function UpgradeRow({ upgrade, onBuy, marshmallows }: { upgrade: Upgrade; onBuy:
         <span className="upgrade-output">+{pretty(upgrade.amount, 2)} {upgrade.category === 'player' ? 'roast power' : 'marshmallows / sec'}</span>
       </div>
       <button className="buy-button" type="button" disabled={!canBuy} onClick={() => onBuy(upgrade.id)} data-testid={`button-buy-${upgrade.id}`}>
-        <span>{upgrade.unlocked ? pretty(upgrade.cost) : 'Locked'}</span>
-        {upgrade.unlocked && <span className="buy-currency">mallow</span>}
+        <span>{upgrade.unlocked ? needsMoreSticks ? 'Need sticks' : pretty(upgrade.cost) : 'Locked'}</span>
+        {upgrade.unlocked && !needsMoreSticks && <span className="buy-currency">mallow</span>}
       </button>
     </article>
   );
@@ -208,7 +201,7 @@ function App() {
       <section className="hud load-in" aria-label="Camp stats">
         <div className="mallow-total"><span className="stat-label">YOUR MARSHMALLOWS</span><strong data-testid="text-marshmallow-count">{pretty(state.marshmallows)}</strong><span className="stat-rate">+{pretty(state.mps, 2)} <small>per second</small></span></div>
         <div className="hud-divider" />
-        <div className="hud-stat"><span className="stat-icon"><Flame size={14} /></span><span className="stat-label">MARSHMALLOWS / ROAST</span><strong>{pretty(state.mpr, 2)}</strong></div>
+        <div className="hud-stat"><span className="stat-icon"><Flame size={14} /></span><span className="stat-label">ROAST POWER</span><strong>{pretty(state.mpr, 2)}<small> / {pretty(state.maxMpr, 2)}</small></strong></div>
         <div className="hud-stat"><span className="stat-icon muted-icon"><Trees size={14} /></span><span className="stat-label">YOUR CAMPSITE</span><strong>{pretty(state.sticks)} <small>sticks</small><span className="stat-dot">·</span>{pretty(state.friends)} <small>friends</small></strong></div>
       </section>
 
@@ -226,7 +219,7 @@ function App() {
             <button type="button" role="tab" aria-selected={shopTab === 'friends'} className={shopTab === 'friends' ? 'selected' : ''} onClick={() => setShopTab('friends')} data-testid="tab-friends"><Users size={14} /> Friends</button>
           </div>
           <div className="shop-scroll">
-            {visibleUpgrades.length ? visibleUpgrades.map((upgrade: Upgrade) => <UpgradeRow key={upgrade.id} upgrade={upgrade} onBuy={game.buyUpgrade} marshmallows={state.marshmallows} />) : <div className="shop-empty"><Tent size={22} /><span>The woods are quiet for now.</span><small>More campsite improvements will appear here.</small></div>}
+            {visibleUpgrades.length ? visibleUpgrades.map((upgrade: Upgrade) => <UpgradeRow key={upgrade.id} upgrade={upgrade} onBuy={game.buyUpgrade} marshmallows={state.marshmallows} mpr={state.mpr} maxMpr={state.maxMpr} />) : <div className="shop-empty"><Tent size={22} /><span>The woods are quiet for now.</span><small>More campsite improvements will appear here.</small></div>}
           </div>
           <div className="shop-footer"><span><Timer size={13} /> {pretty(state.activeSeconds / 60, 1)} min around the fire</span><span>Saved {timeSince(lastSavedAt)}</span></div>
         </div>}
