@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
+@layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
+@import '@clerk/themes/shadcn.css';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
@@ -91,6 +93,23 @@
   background: #111723;
   isolation: isolate;
 }
+.auth-route {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 18px;
+  background:
+    radial-gradient(ellipse at 50% 88%, rgba(188, 109, 46, .16), transparent 34%),
+    linear-gradient(180deg, #111826 0%, #172332 55%, #19211e 100%);
+}
+.auth-copy { max-width: 440px; text-align: center; }
+.auth-copy h1 { margin: 8px 0 5px; color: #f0e7d4; font: 500 28px var(--app-font-serif); }
+.auth-copy p { margin: 0; color: #a7ad9e; font-size: 13px; }
+.auth-eyebrow { color: #dba66b; font: 500 10px var(--app-font-mono); letter-spacing: .16em; text-transform: uppercase; }
+.cl-formFieldInput::placeholder { color: #879186; opacity: 1; }
 .camp-app::after {
   content: '';
   pointer-events: none;
@@ -109,6 +128,9 @@
     radial-gradient(ellipse at 52% 81%, rgba(234, 126, 48, .2), transparent 29%),
     linear-gradient(180deg, #111826 0%, #172332 47%, #26312f 100%);
   overflow: hidden;
+}
+.scene.fire-glow-off {
+  background: linear-gradient(180deg, #111826 0%, #172332 47%, #26312f 100%);
 }
 .camp-app > .scene { position:absolute; inset:0; min-height:100%; z-index:0; }
 .scene-vignette { position:absolute; inset:0; z-index:2; pointer-events:none; background:linear-gradient(90deg,rgba(8,13,20,.3),transparent 24%,transparent 76%,rgba(8,13,20,.34)),linear-gradient(0deg,rgba(8,12,16,.34),transparent 44%); }
@@ -282,6 +304,8 @@
   filter: drop-shadow(0 0 30px rgba(231, 111, 39, .32));
   transition: transform .45s ease;
 }
+.campfire.no-glow { filter:none; }
+.fire-glow-off .fire-glow { display:none; }
 .fire-glow { position:absolute; width:160%; height:130%; bottom:-8%; background:radial-gradient(ellipse, rgba(239,129,49,.31), rgba(180,85,34,.11) 39%, transparent 68%); animation: pulse 2.8s ease-in-out infinite alternate; }
 .flame {
   position:absolute; bottom:38px; left:50%; transform:translateX(-50%);
@@ -312,8 +336,8 @@
 .friend-overflow,.stick-overflow { color:#ead4a7;background:rgba(29,32,30,.76);border:1px solid rgba(217,173,107,.24);border-radius:999px;padding:4px 8px;font:10px var(--app-font-mono);white-space:nowrap; }
 .friend-overflow { position:absolute;left:50%;bottom:-20px;transform:translateX(-50%); }
 .player-sticks { position:absolute;z-index:10;left:0;right:0;bottom:0;height:0;pointer-events:none;perspective:1000px;transform-style:preserve-3d; }
-.eyes { position:absolute; right:7%; top:46%; width:18px; height:5px; display:flex; justify-content:space-between; opacity:.68; animation: blink 8s infinite; }
-.eyes::before,.eyes::after {content:'';width:4px;height:4px;background:#e5c276;border-radius:50%;box-shadow:0 0 8px #f1c878}
+.spooky-eyes { position:absolute; z-index:3; width:18px; height:5px; display:flex; justify-content:space-between; opacity:.68; pointer-events:none; animation-name:blink; animation-duration:var(--blink-duration,8s); animation-delay:var(--blink-delay,0s); animation-iteration-count:infinite; }
+.spooky-eyes::before,.spooky-eyes::after {content:'';width:4px;height:4px;background:#e5c276;border-radius:50%;box-shadow:0 0 8px #f1c878}
 .roast-stick {
   position:absolute;left:50%;bottom:-9px;width:8px;height:clamp(280px,33vh,360px);
   transform:translateX(-50%) rotate(var(--stick-angle,-5deg)) rotateX(4deg);transform-origin:bottom center;

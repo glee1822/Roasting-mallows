@@ -26,9 +26,17 @@ export interface Upgrade {
   cost: number;
   amount: number;
   purchased: number;
+  maxPurchases?: number;
+  capped: boolean;
   unlocked: boolean;
   affordable: boolean;
   category: 'player' | 'friends';
+}
+
+export interface GameSettings {
+  musicEnabled: boolean;
+  musicVolume: number;
+  fireGlow: boolean;
 }
 
 export interface CampfireGame {
@@ -37,11 +45,14 @@ export interface CampfireGame {
   upgrades: Upgrade[];
   offlineEarnings: number;
   lastSavedAt: number;
-  musicEnabled: boolean;
+  settings: GameSettings;
   startRoast(): void;
   releaseRoast(): void;
   buyUpgrade(id: string): void;
   setMusicEnabled(enabled: boolean): void;
+  setMusicVolume(volume: number): void;
+  setFireGlow(enabled: boolean): void;
+  resetGame(): void;
   exportSave(): void;
   importSave(file: File): Promise<void>;
 }

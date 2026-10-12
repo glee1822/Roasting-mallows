@@ -1,44 +1,60 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type PointerEvent } from 'react';
-import { Flame, Sparkles, ChevronDown, Moon, Music2, VolumeX, Download, Upload, Users, Tent, Trees, Timer, ShoppingBag } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useClerk, useUser } from '@clerk/react';
+import { Flame, Sparkles, Moon, Music2, VolumeX, Trees, Menu } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { useCampfireGame } from '@/game/useCampfireGame';
-import type { Upgrade } from '@/game/gameTypes';
+import GameMenu from '@/components/game-menu';
 import './index.css';
+
+const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const stars = [
   [7, 18], [15, 32], [22, 11], [31, 25], [39, 8], [45, 17], [57, 12], [65, 23],
   [72, 9], [83, 19], [91, 12], [96, 32], [12, 7], [28, 18], [53, 31], [77, 27],
 ];
 
+const spookyEyes = [
+  { left: 8, top: 51, delay: "-1.4s", duration: "7.2s" },
+  { left: 19, top: 60, delay: "-4.1s", duration: "9.5s" },
+  { left: 33, top: 46, delay: "-2.2s", duration: "8.4s" },
+  { left: 57, top: 55, delay: "-5.8s", duration: "10.2s" },
+  { left: 73, top: 48, delay: "-3.3s", duration: "7.8s" },
+  { left: 91, top: 58, delay: "-6.6s", duration: "9.1s" },
+];
+
 function pretty(value: number, decimals = 0) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals }).format(value);
 }
 
-function timeSince(timestamp: number) {
-  if (!timestamp) return 'just now';
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours} hr${hours === 1 ? '' : 's'} ago` : `${Math.floor(hours / 24)} days ago`;
-}
-
-function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number; sticks: number; mpr: number; roastPhase: string; roasting: boolean }) {
+function Scene({ friends, sticks, mpr, roastPhase, roasting, fireGlow }: { friends: number; sticks: number; mpr: number; roastPhase: string; roasting: boolean; fireGlow: boolean }) {
   const visibleFriends = Math.min(friends, 8);
   const leftFriends = Math.ceil(visibleFriends / 2);
   const rightFriends = visibleFriends - leftFriends;
   const visibleSticks = Math.min(sticks, 5);
   const fireScale = Math.min(20, 7 + Math.floor(friends / 10) * 0.5) / 7;
   return (
-    <div className="scene" aria-label="A quiet campsite beneath a starry woodland sky">
+    <div className={`scene ${fireGlow ? '' : 'fire-glow-off'}`} aria-label="A quiet campsite beneath a starry woodland sky">
       <div className="scene-sky" />
       <div className="stars" aria-hidden="true">
         {stars.map(([left, top], index) => <span className="star" key={index} style={{ left: `${left}%`, top: `${top}%`, opacity: index % 4 === 0 ? .45 : .9 }} />)}
       </div>
       <div className="moon" />
       <div className="tree-line" aria-hidden="true">
-        {Array.from({ length: 24 }, (_, i) => <div className={`tree ${i % 3 === 0 ? 'far' : ''}`} key={i} style={{ height: `${66 + ((i * 17) % 31)}%`, left: `${(i / 24) * 100}%` }} />)}
+        {Array.from({ length: 24 }, (_, i) => <div className={`tree ${i % 3 === 0 ? 'far' : ''}`} key={i} style={{ height: `${45 + ((i * 17) % 25)}%`, left: `${(i / 24) * 100}%` }} />)}
       </div>
-      <div className="eyes" aria-hidden="true" />
+      {spookyEyes.map((eye, index) => (
+        <span
+          className="spooky-eyes"
+          aria-hidden="true"
+          key={index}
+          style={{
+            left: `${eye.left}%`,
+            top: `${eye.top}%`,
+            '--blink-delay': eye.delay,
+            '--blink-duration': eye.duration,
+          } as CSSProperties}
+        />
+      ))}
       <div className="horizon" />
       <div className="ground" />
       <div className="tent-light" />
@@ -52,7 +68,7 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
         </div>
         {friends > visibleFriends && <span className="friend-overflow">+{pretty(friends - visibleFriends)}</span>}
       </div>}
-      <div className="campfire" style={{ transform: `translateX(-50%) scale(${fireScale})` }} aria-hidden="true">
+      <div className={`campfire ${fireGlow ? '' : 'no-glow'}`} style={{ transform: `translateX(-50%) scale(${fireScale})` }} aria-hidden="true">
         <div className="fire-glow" />
         <span className="ember" /><span className="ember" /><span className="ember" /><span className="ember" />
         <div className="flame" /><div className="flame two" /><div className="logs" />
@@ -95,38 +111,31 @@ function Scene({ friends, sticks, mpr, roastPhase, roasting }: { friends: number
   );
 }
 
-function UpgradeRow({ upgrade, onBuy, marshmallows, mpr, maxMpr }: { upgrade: Upgrade; onBuy: (id: string) => void; marshmallows: number; mpr: number; maxMpr: number }) {
-  const needsMoreSticks = upgrade.id.startsWith('mpr-') && mpr + upgrade.amount > maxMpr;
-  const isGoldenLesson = upgrade.id === 'golden-friends';
-  const canBuy = upgrade.unlocked && upgrade.affordable && !needsMoreSticks && marshmallows >= upgrade.cost;
-  return (
-    <article className={`upgrade-row ${!upgrade.unlocked ? 'upgrade-locked' : ''}`} data-testid={`upgrade-${upgrade.id}`}>
-      <div className="upgrade-glyph">{upgrade.category === 'player' ? <Flame size={17} /> : <Users size={17} />}</div>
-      <div className="upgrade-copy">
-        <div className="upgrade-title">{upgrade.name}<span className="upgrade-owned">×{upgrade.purchased}</span></div>
-        <p>{upgrade.description}</p>
-        {!isGoldenLesson && <span className="upgrade-output">+{pretty(upgrade.amount, 2)} {upgrade.category === 'player' ? 'roast power' : 'marshmallows / sec'}</span>}
-      </div>
-      <button className="buy-button" type="button" disabled={!canBuy} onClick={() => onBuy(upgrade.id)} data-testid={`button-buy-${upgrade.id}`}>
-        <span>{upgrade.unlocked ? isGoldenLesson ? 'Learn' : needsMoreSticks ? 'Need sticks' : pretty(upgrade.cost) : 'Locked'}</span>
-        {upgrade.unlocked && !needsMoreSticks && !isGoldenLesson && <span className="buy-currency">mallow</span>}
-      </button>
-    </article>
-  );
-}
-
 function App() {
   const game = useCampfireGame();
-  const { state, roast, upgrades, offlineEarnings, lastSavedAt, musicEnabled } = game;
-  const [shopOpen, setShopOpen] = useState(true);
-  const [shopTab, setShopTab] = useState<'player' | 'friends'>('player');
-  const [ioMessage, setIoMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const { state, roast, upgrades, offlineEarnings, settings } = game;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
+  const [, setLocation] = useLocation();
   const roastPointer = useRef(false);
   const releaseRef = useRef(game.releaseRoast);
   releaseRef.current = game.releaseRoast;
 
+  const openMenu = useCallback(() => {
+    releaseRef.current();
+    roastPointer.current = false;
+    setMenuOpen(true);
+  }, []);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const signIn = useCallback(() => setLocation('/sign-in'), [setLocation]);
+  const signUp = useCallback(() => setLocation('/sign-up'), [setLocation]);
+  const signOutOfAccount = useCallback(() => {
+    void signOut({ redirectUrl: appBasePath || '/' });
+  }, [signOut]);
+
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     if (event.code !== 'Space' || event.repeat) return;
     const target = event.target as HTMLElement | null;
     const tag = target?.tagName?.toLowerCase();
@@ -167,21 +176,6 @@ function App() {
     roastPointer.current = false;
     game.releaseRoast();
   };
-  const onImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-    setIoMessage(null);
-    try {
-      await game.importSave(file);
-      setIoMessage({ tone: 'success', text: 'Camp saved from file. Welcome back.' });
-    } catch (error) {
-      setIoMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not read that save file.' });
-    } finally {
-      input.value = '';
-    }
-  };
-  const visibleUpgrades = upgrades.filter((upgrade: Upgrade) => upgrade.category === shopTab);
   const isRoasting = roast.phase === 'roasting';
   const roastOutcome = roast.phase === 'early' ? 'Uncooked roast'
     : roast.phase === 'normal' ? 'Normal roast'
@@ -190,7 +184,7 @@ function App() {
 
   return (
     <main className="camp-app">
-      <Scene friends={state.friends} sticks={state.sticks} mpr={state.mpr} roastPhase={roast.phase} roasting={isRoasting} />
+      <Scene friends={state.friends} sticks={state.sticks} mpr={state.mpr} roastPhase={roast.phase} roasting={isRoasting} fireGlow={settings.fireGlow} />
       <header className="topbar load-in">
         <div className="brand-lockup">
           <div className="brand-mark"><Flame size={18} strokeWidth={1.8} /></div>
@@ -198,12 +192,10 @@ function App() {
         </div>
         <div className="night-pill"><Moon size={14} /><span>NIGHT {pretty(state.nights)}</span></div>
         <div className="header-actions">
-          <button className="icon-button" type="button" onClick={() => game.setMusicEnabled(!musicEnabled)} aria-label={musicEnabled ? 'Turn ambient sound off' : 'Turn ambient sound on'} title={musicEnabled ? 'Ambient sound on' : 'Ambient sound off'} data-testid="button-music">
-            {musicEnabled ? <Music2 size={17} /> : <VolumeX size={17} />}
+          <button className="icon-button" type="button" onClick={() => game.setMusicEnabled(!settings.musicEnabled)} aria-label={settings.musicEnabled ? 'Turn ambient sound off' : 'Turn ambient sound on'} title={settings.musicEnabled ? 'Ambient sound on' : 'Ambient sound off'} data-testid="button-music">
+            {settings.musicEnabled ? <Music2 size={17} /> : <VolumeX size={17} />}
           </button>
-          <button className="icon-button save-trigger" type="button" onClick={game.exportSave} title="Export save" aria-label="Export save" data-testid="button-export"><Download size={17} /></button>
-          <button className="icon-button" type="button" onClick={() => fileInput.current?.click()} title="Import save" aria-label="Import save" data-testid="button-import"><Upload size={17} /></button>
-          <input ref={fileInput} className="visually-hidden" type="file" accept=".json,application/json" onChange={onImport} data-testid="input-import-save" />
+          <button className="icon-button" type="button" onClick={openMenu} title="Open campsite menu" aria-label="Open campsite menu" aria-expanded={menuOpen} aria-controls="game-menu" data-testid="button-menu"><Menu size={17} /></button>
         </div>
       </header>
       <section className="hud load-in" aria-label="Camp stats">
@@ -216,22 +208,6 @@ function App() {
       {offlineEarnings > 0 && <div className="offline-note load-in" role="status" data-testid="status-offline-earnings">
         <Sparkles size={15} /><span>While you were away, your friends gathered <strong>{pretty(offlineEarnings)} marshmallows.</strong></span>
       </div>}
-
-      <aside className={`shop-panel ${shopOpen ? 'is-open' : 'is-closed'}`} aria-label="Campsite shop">
-        <button className="shop-heading" type="button" onClick={() => setShopOpen(!shopOpen)} aria-expanded={shopOpen} data-testid="button-toggle-shop">
-          <span className="shop-icon"><ShoppingBag size={16} /></span><span className="shop-title">Campsite</span><span className="shop-count">{upgrades.filter((u: Upgrade) => u.unlocked).length} upgrades</span><ChevronDown size={17} className="shop-chevron" />
-        </button>
-        {shopOpen && <div className="shop-content">
-          <div className="shop-tabs" role="tablist" aria-label="Upgrade type">
-            <button type="button" role="tab" aria-selected={shopTab === 'player'} className={shopTab === 'player' ? 'selected' : ''} onClick={() => setShopTab('player')} data-testid="tab-player"><Flame size={14} /> Player</button>
-            <button type="button" role="tab" aria-selected={shopTab === 'friends'} className={shopTab === 'friends' ? 'selected' : ''} onClick={() => setShopTab('friends')} data-testid="tab-friends"><Users size={14} /> Friends</button>
-          </div>
-          <div className="shop-scroll">
-            {visibleUpgrades.length ? visibleUpgrades.map((upgrade: Upgrade) => <UpgradeRow key={upgrade.id} upgrade={upgrade} onBuy={game.buyUpgrade} marshmallows={state.marshmallows} mpr={state.mpr} maxMpr={state.maxMpr} />) : <div className="shop-empty"><Tent size={22} /><span>The woods are quiet for now.</span><small>More campsite improvements will appear here.</small></div>}
-          </div>
-          <div className="shop-footer"><span><Timer size={13} /> {pretty(state.activeSeconds / 60, 1)} min around the fire</span><span>Saved {timeSince(lastSavedAt)}</span></div>
-        </div>}
-      </aside>
 
       <div className="roast-panel load-in">
         <div className="roast-control">
@@ -258,9 +234,26 @@ function App() {
         )}
       </div>
 
-      {ioMessage && <div className={`io-message ${ioMessage.tone}`} role="status" data-testid="status-save-message">
-        <span>{ioMessage.text}</span><button type="button" onClick={() => setIoMessage(null)} aria-label="Dismiss message" data-testid="button-dismiss-message">×</button>
-      </div>}
+      <GameMenu
+        open={menuOpen}
+        onClose={closeMenu}
+        state={state}
+        upgrades={upgrades}
+        onBuyUpgrade={game.buyUpgrade}
+        settings={settings}
+        onSetMusicEnabled={game.setMusicEnabled}
+        onSetMusicVolume={game.setMusicVolume}
+        onSetFireGlow={game.setFireGlow}
+        onExportSave={game.exportSave}
+        onImportSave={game.importSave}
+        onResetGame={game.resetGame}
+        authLoading={!isLoaded}
+        signedIn={Boolean(isSignedIn)}
+        userLabel={user?.fullName || user?.username || user?.primaryEmailAddress?.emailAddress || null}
+        onSignIn={signIn}
+        onSignUp={signUp}
+        onSignOut={signOutOfAccount}
+      />
       <div className="scene-caption"><span className="caption-rule" />A quiet place to make something sweet</div>
     </main>
   );

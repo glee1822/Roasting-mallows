@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CampfireState,
+  GameSettings,
   RoastPhase,
   RoastState,
   Upgrade,
 } from "./gameTypes";
 
 const SAVE_KEY = "campfire-clicker-save-v1";
-const SAVE_VERSION = 3;
-const PREVIOUS_SAVE_VERSIONS = new Set([1, 2]);
+const SAVE_VERSION = 4;
+const PREVIOUS_SAVE_VERSIONS = new Set([1, 2, 3]);
 const TICK_MS = 1000;
 const SAVE_INTERVAL_MS = 2500;
 const ROAST_MIN_SECONDS = 1;
 const ROAST_GOLDEN_START = 2.3;
 const ROAST_GOLDEN_END = 2.5;
 const ROAST_BURN_SECONDS = 2.5;
+const MAX_ROAST_SPEED_PURCHASES = 75;
+const DEFAULT_MUSIC_VOLUME = 35;
+const DEFAULT_FIRE_GLOW = true;
 
 interface PersistedGame {
   marshmallows: number;
@@ -31,6 +35,8 @@ interface SaveFile {
   game: PersistedGame;
   savedAt: number;
   musicEnabled: boolean;
+  musicVolume: number;
+  fireGlow: boolean;
   version: number;
 }
 
@@ -44,6 +50,8 @@ interface UpgradeDefinition {
   prerequisiteId?: string;
   prerequisiteCount?: number;
   oneTime?: boolean;
+  priceMultiplier?: number;
+  maxPurchases?: number;
 }
 
 const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
@@ -54,6 +62,16 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     baseCost: 20,
     amount: 1,
     category: "player",
+  },
+  {
+    id: "roast-speed",
+    name: "Quicker roasting",
+    description: "Roast 0.01 seconds faster per level, up to 0.75 seconds.",
+    baseCost: 200,
+    amount: 0.01,
+    category: "player",
+    priceMultiplier: 1.40625,
+    maxPurchases: MAX_ROAST_SPEED_PURCHASES,
   },
   {
     id: "mpr-10",
@@ -163,10 +181,10 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "friends-50",
-    name: "Invite fifty friends",
-    description: "A whole gathering joins the roasting.",
+    name: "Invite twenty-five friends",
+    description: "A gathering of twenty-five friends joins the roasting.",
     baseCost: 2000,
-    amount: 50,
+    amount: 25,
     category: "friends",
     prerequisiteId: "friends-10",
   },
@@ -189,10 +207,10 @@ const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "friend-mpr-50",
-    name: "+50 marshmallows per friend each second",
-    description: "Every friend roasts fifty more marshmallows per second.",
+    name: "+25 marshmallows per friend each second",
+    description: "Every friend roasts twenty-five more marshmallows per second.",
     baseCost: 600,
-    amount: 50,
+    amount: 25,
     category: "friends",
     prerequisiteId: "friend-mpr-10",
   },
@@ -232,6 +250,20 @@ function createNewGame(): PersistedGame {
   };
 }
 
+function getRoastTiming(game: PersistedGame) {
+  const speedLevels = Math.min(
+    MAX_ROAST_SPEED_PURCHASES,
+    game.purchases["roast-speed"] ?? 0,
+  );
+  const timeReduction = speedLevels * 0.01;
+  return {
+    minSeconds: ROAST_MIN_SECONDS - timeReduction,
+    goldenStart: ROAST_GOLDEN_START - timeReduction,
+    goldenEnd: ROAST_GOLDEN_END - timeReduction,
+    burnSeconds: ROAST_BURN_SECONDS - timeReduction,
+  };
+}
+
 function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
@@ -263,13 +295,17 @@ function validatePersistedGame(
 
   return (
     (allowLegacyOverCapacity || game.mpr <= game.sticks * 5) &&
-    Object.entries(game.purchases).every(
-    ([id, count]) =>
-      (UPGRADE_BY_ID.has(id) || RETIRED_UPGRADE_IDS.has(id)) &&
-      Number.isSafeInteger(count) &&
-      typeof count === "number" &&
-      count >= 0,
-    )
+    Object.entries(game.purchases).every(([id, count]) => {
+      const definition = UPGRADE_BY_ID.get(id);
+      return (
+        (definition !== undefined || RETIRED_UPGRADE_IDS.has(id)) &&
+        Number.isSafeInteger(count) &&
+        typeof count === "number" &&
+        count >= 0 &&
+        (definition?.maxPurchases === undefined ||
+          count <= definition.maxPurchases)
+      );
+    })
   );
 }
 
@@ -297,11 +333,27 @@ function rounded(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function savedGame(game: PersistedGame, musicEnabled: boolean): SaveFile {
+function settingsFromSave(save: Partial<SaveFile>): GameSettings {
+  return {
+    musicEnabled: save.musicEnabled === true,
+    musicVolume:
+      isFiniteNonNegative(save.musicVolume) && save.musicVolume <= 100
+        ? save.musicVolume
+        : DEFAULT_MUSIC_VOLUME,
+    fireGlow:
+      typeof save.fireGlow === "boolean"
+        ? save.fireGlow
+        : DEFAULT_FIRE_GLOW,
+  };
+}
+
+function savedGame(game: PersistedGame, settings: GameSettings): SaveFile {
   return {
     version: SAVE_VERSION,
     savedAt: Date.now(),
-    musicEnabled,
+    musicEnabled: settings.musicEnabled,
+    musicVolume: settings.musicVolume,
+    fireGlow: settings.fireGlow,
     game: {
       ...game,
       purchases: { ...game.purchases },
@@ -313,7 +365,7 @@ function loadLocalGame(): {
   game: PersistedGame;
   offlineEarnings: number;
   savedAt: number;
-  musicEnabled: boolean;
+  settings: GameSettings;
 } {
   const now = Date.now();
   try {
@@ -323,7 +375,7 @@ function loadLocalGame(): {
         game: createNewGame(),
         offlineEarnings: 0,
         savedAt: now,
-        musicEnabled: false,
+        settings: settingsFromSave({}),
       };
     }
 
@@ -358,14 +410,14 @@ function loadLocalGame(): {
       game,
       offlineEarnings: earnings,
       savedAt: now,
-      musicEnabled: save.musicEnabled === true,
+      settings: settingsFromSave(save),
     };
   } catch {
     return {
       game: createNewGame(),
       offlineEarnings: 0,
       savedAt: now,
-      musicEnabled: false,
+      settings: settingsFromSave({}),
     };
   }
 }
@@ -379,10 +431,18 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
         prerequisiteCount
       : true;
     const cost = Math.ceil(
-      definition.baseCost * Math.pow(1.25, purchased),
+      definition.baseCost *
+        Math.pow(
+          definition.priceMultiplier ??
+            (definition.category === "friends" ? 2.5 : 1.25),
+          purchased,
+        ),
     );
+    const capped =
+      definition.maxPurchases !== undefined &&
+      purchased >= definition.maxPurchases;
     const oneTimeAvailable =
-      !definition.oneTime || !game.goldenFriends;
+      (!definition.oneTime || !game.goldenFriends) && !capped;
     const hasRoastCapacity =
       !definition.id.startsWith("mpr-") ||
       game.mpr + definition.amount <= game.sticks * 5;
@@ -394,10 +454,13 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
       cost,
       amount: definition.amount,
       purchased,
+      maxPurchases: definition.maxPurchases,
+      capped,
       unlocked,
       affordable:
         unlocked &&
         oneTimeAvailable &&
+        !capped &&
         hasRoastCapacity &&
         game.marshmallows >= cost,
       category: definition.category,
@@ -405,9 +468,13 @@ function createUpgradeViews(game: PersistedGame): Upgrade[] {
   });
 }
 
-function makeMusic(enabled: boolean): AudioContext | null {
+interface MusicAudio {
+  context: AudioContext;
+  master: GainNode;
+}
+
+function makeMusic(volume: number): MusicAudio | null {
   if (
-    !enabled ||
     typeof window === "undefined" ||
     typeof window.AudioContext === "undefined"
   ) {
@@ -417,7 +484,7 @@ function makeMusic(enabled: boolean): AudioContext | null {
   try {
     const context = new AudioContext();
     const master = context.createGain();
-    master.gain.value = 0.035;
+    master.gain.value = 0.035 * (volume / 100);
     master.connect(context.destination);
 
     const lowNote = context.createOscillator();
@@ -438,7 +505,7 @@ function makeMusic(enabled: boolean): AudioContext | null {
     highGain.connect(master);
     highNote.start();
 
-    return context;
+    return { context, master };
   } catch {
     return null;
   }
@@ -452,7 +519,8 @@ export function useCampfireGame() {
     initial.offlineEarnings,
   );
   const [lastSavedAt, setLastSavedAt] = useState(initial.savedAt);
-  const [musicEnabled, setMusicEnabledValue] = useState(initial.musicEnabled);
+  const [settings, setSettings] = useState(initial.settings);
+  const settingsRef = useRef(settings);
   const [roast, setRoast] = useState<RoastState>({
     progress: 0,
     phase: "idle",
@@ -461,8 +529,7 @@ export function useCampfireGame() {
   const lastSimulationAt = useRef(Date.now());
   const roastStartedAt = useRef<number | null>(null);
   const roastResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const audioContext = useRef<AudioContext | null>(null);
-  const musicSetting = useRef(musicEnabled);
+  const musicAudio = useRef<MusicAudio | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -473,13 +540,23 @@ export function useCampfireGame() {
     try {
       localStorage.setItem(
         SAVE_KEY,
-        JSON.stringify(savedGame(game, musicSetting.current)),
+        JSON.stringify(savedGame(game, settingsRef.current)),
       );
       setLastSavedAt(now);
     } catch {
       // The in-memory game stays playable if local storage is unavailable.
     }
   }, []);
+
+  const updateSettings = useCallback(
+    (changes: Partial<GameSettings>) => {
+      const next = { ...settingsRef.current, ...changes };
+      settingsRef.current = next;
+      setSettings(next);
+      writeSave(stateRef.current);
+    },
+    [writeSave],
+  );
 
   const updateGame = useCallback(
     (updater: (current: PersistedGame) => PersistedGame) => {
@@ -537,17 +614,18 @@ export function useCampfireGame() {
       const startedAt = roastStartedAt.current;
       if (startedAt === null) return;
       const elapsed = Math.max(0, (performance.now() - startedAt) / 1000);
+      const timing = getRoastTiming(stateRef.current);
       const phase: RoastPhase =
-        elapsed >= ROAST_BURN_SECONDS
+        elapsed >= timing.burnSeconds
           ? "burnt"
-          : elapsed >= ROAST_GOLDEN_START
+          : elapsed >= timing.goldenStart
             ? "golden"
-            : elapsed >= ROAST_MIN_SECONDS
+            : elapsed >= timing.minSeconds
               ? "normal"
               : "roasting";
       setRoast((current) => ({
         ...current,
-        progress: Math.min(1, elapsed / ROAST_BURN_SECONDS),
+        progress: Math.min(1, elapsed / timing.burnSeconds),
         phase,
       }));
     }, 50);
@@ -555,32 +633,31 @@ export function useCampfireGame() {
   }, []);
 
   useEffect(() => {
-    musicSetting.current = musicEnabled;
-    if (audioContext.current && !musicEnabled) {
-      void audioContext.current.close();
-      audioContext.current = null;
+    if (musicAudio.current && !settings.musicEnabled) {
+      void musicAudio.current.context.close();
+      musicAudio.current = null;
     }
-    if (musicEnabled && !audioContext.current) {
-      audioContext.current = makeMusic(true);
-      if (audioContext.current?.state === "suspended") {
-        void audioContext.current.resume();
+    if (settings.musicEnabled && !musicAudio.current) {
+      musicAudio.current = makeMusic(settings.musicVolume);
+      if (musicAudio.current?.context.state === "suspended") {
+        void musicAudio.current.context.resume();
+      }
+    } else if (musicAudio.current) {
+      const { context, master } = musicAudio.current;
+      master.gain.setTargetAtTime(
+        0.035 * (settings.musicVolume / 100),
+        context.currentTime,
+        0.08,
+      );
+      if (context.state === "suspended") {
+        void context.resume();
       }
     }
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as SaveFile;
-        parsed.musicEnabled = musicEnabled;
-        localStorage.setItem(SAVE_KEY, JSON.stringify(parsed));
-      }
-    } catch {
-      // Saving the sound preference is best effort; game progress is separate.
-    }
-  }, [musicEnabled]);
+  }, [settings.musicEnabled, settings.musicVolume]);
 
   useEffect(
     () => () => {
-      if (audioContext.current) void audioContext.current.close();
+      if (musicAudio.current) void musicAudio.current.context.close();
       if (roastResetTimer.current) clearTimeout(roastResetTimer.current);
     },
     [],
@@ -598,15 +675,19 @@ export function useCampfireGame() {
     if (startedAt === null) return;
     roastStartedAt.current = null;
     const elapsed = Math.max(0, (performance.now() - startedAt) / 1000);
+    const timing = getRoastTiming(stateRef.current);
     let phase: RoastPhase;
     let multiplier = 0;
 
-    if (elapsed < ROAST_MIN_SECONDS) {
+    if (elapsed < timing.minSeconds) {
       phase = "early";
-    } else if (elapsed >= ROAST_GOLDEN_START && elapsed <= ROAST_GOLDEN_END) {
+    } else if (
+      elapsed >= timing.goldenStart &&
+      elapsed <= timing.goldenEnd
+    ) {
       phase = "golden";
       multiplier = 2;
-    } else if (elapsed < ROAST_GOLDEN_START) {
+    } else if (elapsed < timing.goldenStart) {
       phase = "normal";
       multiplier = 1;
     } else {
@@ -623,7 +704,7 @@ export function useCampfireGame() {
       }));
     }
     setRoast({
-      progress: Math.min(1, elapsed / ROAST_BURN_SECONDS),
+      progress: Math.min(1, elapsed / timing.burnSeconds),
       phase,
       lastAward: award,
     });
@@ -673,21 +754,38 @@ export function useCampfireGame() {
     [updateGame, writeSave],
   );
 
-  const setMusicEnabled = useCallback((enabled: boolean) => {
-    setMusicEnabledValue(enabled);
-  }, []);
+  const setMusicEnabled = useCallback(
+    (enabled: boolean) => updateSettings({ musicEnabled: enabled }),
+    [updateSettings],
+  );
+
+  const setMusicVolume = useCallback(
+    (volume: number) =>
+      updateSettings({ musicVolume: Math.min(100, Math.max(0, volume)) }),
+    [updateSettings],
+  );
+
+  const setFireGlow = useCallback(
+    (enabled: boolean) => updateSettings({ fireGlow: enabled }),
+    [updateSettings],
+  );
+
+  const resetGame = useCallback(() => {
+    if (roastResetTimer.current) clearTimeout(roastResetTimer.current);
+    roastStartedAt.current = null;
+    lastSimulationAt.current = Date.now();
+    const freshGame = createNewGame();
+    stateRef.current = freshGame;
+    setState(freshGame);
+    setOfflineEarnings(0);
+    setRoast({ progress: 0, phase: "idle", lastAward: 0 });
+    writeSave(freshGame);
+  }, [writeSave]);
 
   const exportSave = useCallback(() => {
     const now = Date.now();
-    const save: SaveFile = {
-      version: SAVE_VERSION,
-      savedAt: now,
-      musicEnabled: musicSetting.current,
-      game: {
-        ...stateRef.current,
-        purchases: { ...stateRef.current.purchases },
-      },
-    };
+    const save = savedGame(stateRef.current, settingsRef.current);
+    save.savedAt = now;
     const serialized = JSON.stringify(save, null, 2);
     const blob = new Blob([serialized], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -752,18 +850,14 @@ export function useCampfireGame() {
       lastSimulationAt.current = now;
       roastStartedAt.current = null;
       setRoast({ progress: 0, phase: "idle", lastAward: 0 });
-      setMusicEnabledValue(save.musicEnabled === true);
-      musicSetting.current = save.musicEnabled === true;
+       const importedSettings = settingsFromSave(save);
+       settingsRef.current = importedSettings;
+       setSettings(importedSettings);
       setLastSavedAt(now);
       try {
         localStorage.setItem(
           SAVE_KEY,
-          JSON.stringify({
-            version: SAVE_VERSION,
-            savedAt: now,
-            musicEnabled: save.musicEnabled === true,
-            game: imported,
-          } satisfies SaveFile),
+           JSON.stringify(savedGame(imported, importedSettings)),
         );
       } catch {
         throw new Error(
@@ -797,11 +891,14 @@ export function useCampfireGame() {
     upgrades,
     offlineEarnings,
     lastSavedAt,
-    musicEnabled,
+    settings,
     startRoast,
     releaseRoast,
     buyUpgrade,
     setMusicEnabled,
+    setMusicVolume,
+    setFireGlow,
+    resetGame,
     exportSave,
     importSave,
   };
