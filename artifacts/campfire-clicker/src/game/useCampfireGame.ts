@@ -693,7 +693,7 @@ export function useCampfireGame() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `campfire-clicker-save-${new Date(now)
+    link.download = `roasting-mallows-save-${new Date(now)
       .toISOString()
       .slice(0, 10)}.json`;
     link.click();
@@ -715,7 +715,7 @@ export function useCampfireGame() {
         throw new Error("That file could not be read as a save file.");
       }
       if (!parsed || typeof parsed !== "object") {
-        throw new Error("That file is not a Campfire Clicker save.");
+        throw new Error("That file is not a roasting mallows save.");
       }
 
       const save = parsed as Partial<SaveFile>;

@@ -194,7 +194,7 @@ function App() {
       <header className="topbar load-in">
         <div className="brand-lockup">
           <div className="brand-mark"><Flame size={18} strokeWidth={1.8} /></div>
-          <div><span className="brand-name">Campfire Clicker</span><span className="brand-note">a little night in the woods</span></div>
+          <div><span className="brand-name">roasting mallows</span><span className="brand-note">a little night in the woods</span></div>
         </div>
         <div className="night-pill"><Moon size={14} /><span>NIGHT {pretty(state.nights)}</span></div>
         <div className="header-actions">
